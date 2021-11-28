@@ -1,20 +1,30 @@
 import IO from "effective.ts";
-import { generateLinesOfCodeReport, Report } from "./loc";
+import { generateLinesOfCodeReport, Summary } from "./loc";
 
 const cli = IO.wrap(process.argv.slice(2))
-  .map(parseCliArgs)
-  .andThen(({ targets }) => generateLinesOfCodeReport(targets))
+  .andThen(parseCliArgs)
+  .andThen(({ paths }) => generateLinesOfCodeReport(paths))
   .map(formatReport)
-  .andThen(IO.lift(console.log));
+  .andThen(IO.lift(console.log))
+  .catch((error) => IO.lift(console.error)(`${error}`));
 
-function parseCliArgs(rawArgs: string[]): {
-  targets: string[];
-} {
-  return { targets: rawArgs };
+function parseCliArgs(rawArgs: string[]): IO<
+  {
+    paths: string[];
+  },
+  Error
+> {
+  const paths = rawArgs;
+
+  if (paths.length === 0) {
+    return IO.raise(Error("No path specified"));
+  }
+
+  return IO.wrap({ paths: rawArgs });
 }
 
-function formatReport(report: Report): string {
-  return report.languages
+function formatReport(summary: Summary): string {
+  return summary.languages
     .map(
       (languageReport) =>
         [
