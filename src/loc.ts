@@ -1,7 +1,7 @@
 import IO, { Ref } from "effective.ts";
 import R from "ramda";
-import { stat } from "./file-system";
-import { Language, typescript } from "./languages";
+import { readFile, stat } from "./file-system";
+import { Language, languagesByFileExtension, typescript } from "./languages";
 
 export interface Summary {
   readonly languages: readonly LanguageReport[];
@@ -51,8 +51,13 @@ function analyseFile(
   path: string,
   summaryRef: Ref<Summary>
 ): IO<void, NodeJS.ErrnoException> {
-  // STUB
-  const fileReport = {
+  const language = languagesByFileExtension[fileExtension(path)];
+
+  if (!language) {
+    return IO.void;
+  }
+
+  const initialReport: FileReport = {
     filePath: path,
     language: typescript,
     linesOfCode: 0,
@@ -60,9 +65,25 @@ function analyseFile(
     commentLines: 0,
   };
 
-  return summaryRef
-    .modify((currentSummary) => addFileReport(currentSummary, fileReport))
-    .as(undefined);
+  return readFile(path, "utf8")
+    .map((fileContent) =>
+      (fileContent as string)
+        .split("\n")
+        .reduce((report: FileReport, line: string) => {
+          if (isBlank(line)) {
+            return { ...report, blankLines: report.blankLines + 1 };
+          }
+          if (isComment(line)) {
+            return { ...report, commentLines: report.commentLines + 1 };
+          }
+          return { ...report, linesOfCode: report.linesOfCode + 1 };
+        }, initialReport)
+    )
+    .andThen((fileReport) =>
+      summaryRef
+        .modify((currentSummary) => addFileReport(currentSummary, fileReport))
+        .as(undefined)
+    );
 }
 
 function analyseDirectory(
@@ -109,4 +130,17 @@ function addFileReport(
   return {
     languages: R.update(index, languageReport, currentSummary.languages),
   };
+}
+
+function fileExtension(path: string): string {
+  const match = path.match(/\.(\w+)$/);
+  return match ? match[1] : "";
+}
+
+function isBlank(line: string): boolean {
+  return line.match(/^\s*$/) !== null;
+}
+
+function isComment(line: string): boolean {
+  return false;
 }

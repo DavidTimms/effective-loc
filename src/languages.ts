@@ -15,7 +15,7 @@ export const python: Language = {
   name: "Python",
 };
 
-export const languagesByFileExtension = {
+export const languagesByFileExtension: Partial<Record<string, Language>> = {
   ts: typescript,
   js: javascript,
   py: python,
