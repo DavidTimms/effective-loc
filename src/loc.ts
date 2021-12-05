@@ -59,7 +59,7 @@ function analyseFile(
 
   const initialReport: FileReport = {
     filePath: path,
-    language: typescript,
+    language,
     linesOfCode: 0,
     blankLines: 0,
     commentLines: 0,
@@ -69,11 +69,16 @@ function analyseFile(
     .map((fileContent) =>
       (fileContent as string)
         .split("\n")
-        .reduce((report: FileReport, line: string) => {
+        .reduce((report, line, index, lines) => {
           if (isBlank(line)) {
+            // Do not count a trailing newline as a blank line.
+            if (line === "" && index === lines.length - 1) {
+              return report;
+            }
+
             return { ...report, blankLines: report.blankLines + 1 };
           }
-          if (isComment(line)) {
+          if (isComment(line, language)) {
             return { ...report, commentLines: report.commentLines + 1 };
           }
           return { ...report, linesOfCode: report.linesOfCode + 1 };
@@ -141,6 +146,6 @@ function isBlank(line: string): boolean {
   return line.match(/^\s*$/) !== null;
 }
 
-function isComment(line: string): boolean {
-  return false;
+function isComment(line: string, language: Language): boolean {
+  return language.regExps.singleLineComment?.test(line) ?? false;
 }
