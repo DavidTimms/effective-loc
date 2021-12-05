@@ -2,8 +2,15 @@ import IO from "effective.ts";
 import fs from "fs";
 import R from "ramda";
 
+export type Stats = fs.Stats;
+export type BigIntStats = fs.BigIntStats;
+export type Dirent = fs.Dirent;
+
 export const stat = withErrnoException(IO.lift(fs.promises.stat));
+
 export const readFile = withErrnoException(IO.lift(fs.promises.readFile));
+
+export const readDir = withErrnoException(IO.lift(fs.promises.readdir));
 
 type LiftedMethod<T> = T extends (...args: infer Args) => Promise<infer Return>
   ? (...args: Args) => IO<Return, NodeJS.ErrnoException>

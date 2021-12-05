@@ -1,7 +1,15 @@
 import IO, { Ref } from "effective.ts";
 import R from "ramda";
-import { readFile, stat } from "./file-system";
-import { Language, languagesByFileExtension, typescript } from "./languages";
+import {
+  BigIntStats,
+  Dirent,
+  readDir,
+  readFile,
+  stat,
+  Stats,
+} from "./file-system";
+import { join as joinPath } from "path";
+import { Language, languagesByFileExtension } from "./languages";
 
 export interface Summary {
   readonly languages: readonly LanguageReport[];
@@ -37,14 +45,22 @@ function analysePath(
   path: string,
   summaryRef: Ref<Summary>
 ): IO<void, NodeJS.ErrnoException> {
-  return stat(path).andThen((stats) => {
-    if (stats.isFile()) {
-      return analyseFile(path, summaryRef);
-    } else if (stats.isDirectory()) {
-      return analyseDirectory(path, summaryRef);
-    }
-    return IO.void;
-  });
+  return stat(path).andThen((stats) =>
+    analyseFileWithStats(path, stats, summaryRef)
+  );
+}
+
+function analyseFileWithStats(
+  path: string,
+  fileInfo: Stats | BigIntStats | Dirent,
+  summaryRef: Ref<Summary>
+): IO<void, NodeJS.ErrnoException> {
+  if (fileInfo.isFile()) {
+    return analyseFile(path, summaryRef);
+  } else if (fileInfo.isDirectory()) {
+    return analyseDirectory(path, summaryRef);
+  }
+  return IO.void;
 }
 
 function analyseFile(
@@ -95,8 +111,14 @@ function analyseDirectory(
   path: string,
   summaryRef: Ref<Summary>
 ): IO<void, NodeJS.ErrnoException> {
-  // STUB
-  return IO.void;
+  return readDir(path, { encoding: "utf8", withFileTypes: true })
+    .map(
+      R.map((entry) =>
+        analyseFileWithStats(joinPath(path, entry.name), entry, summaryRef)
+      )
+    )
+    .andThen(IO.sequence)
+    .andThen(() => IO.void);
 }
 
 function addFileReport(
