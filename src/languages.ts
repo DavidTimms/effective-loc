@@ -1,3 +1,5 @@
+// TODO add support for multiline comments.
+
 export interface Language {
   readonly name: string;
   readonly regExps: {
