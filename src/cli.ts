@@ -41,10 +41,6 @@ function formatReport(summary: Summary): string {
     .join("\n");
 }
 
-function underline(s: string): string {
-  return s + "\n" + Array(s.length).fill("-").join("");
-}
-
 function start(): void {
   cli.run();
 }

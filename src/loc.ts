@@ -1,5 +1,5 @@
-import IO, { Ref } from "effective.ts";
-import R from "ramda";
+import IO, { Fiber, Ref } from "effective.ts";
+import R, { sum } from "ramda";
 import {
   BigIntStats,
   Dirent,
@@ -10,6 +10,10 @@ import {
 } from "./file-system";
 import { join as joinPath } from "path";
 import { Language, languagesByFileExtension } from "./languages";
+import { Queue } from "./queue";
+import { forEach } from "./utils";
+
+const PARALLELISM = 8;
 
 export interface Summary {
   readonly languages: readonly LanguageReport[];
@@ -31,34 +35,57 @@ export interface FileReport {
   readonly commentLines: number;
 }
 
+interface FileSystemEntry {
+  path: string;
+  stats: Stats | BigIntStats | Dirent;
+}
+
 export function generateLinesOfCodeReport(
   paths: string[]
 ): IO<Summary, NodeJS.ErrnoException> {
   return Ref.create<Summary>({ languages: [] }).andThen((summaryRef) =>
-    IO.sequence(paths.map((path) => analysePath(path, summaryRef))).andThen(
-      () => summaryRef.get
+    Queue.create<FileSystemEntry>().andThen((workQueue) =>
+      forEach(entryFromPath, paths)
+        .andThen(forEach(workQueue.add))
+        .andThen(() =>
+          IO.parallel(
+            Array(PARALLELISM)
+              .fill(0)
+              .map(() => processNextEntry(workQueue, summaryRef))
+          )
+        )
+        .andThen(() => summaryRef.get)
     )
   );
 }
 
-function analysePath(
-  path: string,
+function processNextEntry(
+  workQueue: Queue<FileSystemEntry>,
   summaryRef: Ref<Summary>
 ): IO<void, NodeJS.ErrnoException> {
-  return stat(path).andThen((stats) =>
-    analyseFileWithStats(path, stats, summaryRef)
-  );
+  return workQueue
+    .remove()
+    .timeout(100, "milliseconds")
+    .andThen((entry) => analyseEntry(entry, workQueue, summaryRef))
+    .andThen(() => processNextEntry(workQueue, summaryRef))
+    .catch(() => IO.void);
 }
 
-function analyseFileWithStats(
-  path: string,
-  fileInfo: Stats | BigIntStats | Dirent,
+function entryFromPath(
+  path: string
+): IO<FileSystemEntry, NodeJS.ErrnoException> {
+  return stat(path).map((stats) => ({ path, stats }));
+}
+
+function analyseEntry(
+  entry: FileSystemEntry,
+  workQueue: Queue<FileSystemEntry>,
   summaryRef: Ref<Summary>
 ): IO<void, NodeJS.ErrnoException> {
-  if (fileInfo.isFile()) {
-    return analyseFile(path, summaryRef);
-  } else if (fileInfo.isDirectory()) {
-    return analyseDirectory(path, summaryRef);
+  if (entry.stats.isFile()) {
+    return analyseFile(entry.path, summaryRef);
+  } else if (entry.stats.isDirectory()) {
+    return analyseDirectory(entry.path, workQueue, summaryRef);
   }
   return IO.void;
 }
@@ -109,15 +136,12 @@ function analyseFile(
 
 function analyseDirectory(
   path: string,
+  workQueue: Queue<FileSystemEntry>,
   summaryRef: Ref<Summary>
 ): IO<void, NodeJS.ErrnoException> {
   return readDir(path, { encoding: "utf8", withFileTypes: true })
-    .map(
-      R.map((entry) =>
-        analyseFileWithStats(joinPath(path, entry.name), entry, summaryRef)
-      )
-    )
-    .andThen(IO.sequence)
+    .map(R.map((stats) => ({ path: joinPath(path, stats.name), stats })))
+    .andThen(forEach(workQueue.add))
     .andThen(() => IO.void);
 }
 

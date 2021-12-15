@@ -22,6 +22,11 @@ const QueueState = {
 export class Queue<A> {
   private state: QueueState<A> = QueueState.empty();
 
+  constructor() {
+    this.add = this.add.bind(this);
+    this.remove = this.remove.bind(this);
+  }
+
   add(item: A): IO<void, never> {
     return IO(() => {
       if (this.state.tag === "EMPTY") {
@@ -52,5 +57,9 @@ export class Queue<A> {
         return item;
       }
     }).castError<never>();
+  }
+
+  static create<A>(): IO<Queue<A>, never> {
+    return IO(() => new Queue<A>()).castError<never>();
   }
 }
