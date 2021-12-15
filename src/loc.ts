@@ -1,4 +1,4 @@
-import IO, { Fiber, Ref } from "effective.ts";
+import IO, { Fiber, Ref, TimeoutError } from "effective.ts";
 import R, { sum } from "ramda";
 import {
   BigIntStats,
@@ -66,9 +66,20 @@ function processNextEntry(
   return workQueue
     .remove()
     .timeout(100, "milliseconds")
-    .andThen((entry) => analyseEntry(entry, workQueue, summaryRef))
+    .andThen((entry) => analyseEntry(entry, workQueue))
+    .andThen((fileReport) =>
+      fileReport
+        ? summaryRef
+            .modify((currentSummary) =>
+              addFileReport(currentSummary, fileReport)
+            )
+            .as(undefined)
+        : IO.void
+    )
     .andThen(() => processNextEntry(workQueue, summaryRef))
-    .catch(() => IO.void);
+    .catch((error) =>
+      error instanceof TimeoutError ? IO.void : IO.raise(error)
+    );
 }
 
 function entryFromPath(
@@ -79,25 +90,23 @@ function entryFromPath(
 
 function analyseEntry(
   entry: FileSystemEntry,
-  workQueue: Queue<FileSystemEntry>,
-  summaryRef: Ref<Summary>
-): IO<void, NodeJS.ErrnoException> {
+  workQueue: Queue<FileSystemEntry>
+): IO<FileReport | null, NodeJS.ErrnoException> {
   if (entry.stats.isFile()) {
-    return analyseFile(entry.path, summaryRef);
+    return analyseFile(entry.path);
   } else if (entry.stats.isDirectory()) {
-    return analyseDirectory(entry.path, workQueue, summaryRef);
+    return analyseDirectory(entry.path, workQueue).as(null);
   }
-  return IO.void;
+  return IO.wrap(null);
 }
 
 function analyseFile(
-  path: string,
-  summaryRef: Ref<Summary>
-): IO<void, NodeJS.ErrnoException> {
+  path: string
+): IO<FileReport | null, NodeJS.ErrnoException> {
   const language = languagesByFileExtension[fileExtension(path)];
 
   if (!language) {
-    return IO.void;
+    return IO.wrap(null);
   }
 
   const initialReport: FileReport = {
@@ -108,36 +117,27 @@ function analyseFile(
     commentLines: 0,
   };
 
-  return readFile(path, "utf8")
-    .map((fileContent) =>
-      (fileContent as string)
-        .split("\n")
-        .reduce((report, line, index, lines) => {
-          if (isBlank(line)) {
-            // Do not count a trailing newline as a blank line.
-            if (line === "" && index === lines.length - 1) {
-              return report;
-            }
+  return readFile(path, "utf8").map((fileContent) =>
+    (fileContent as string).split("\n").reduce((report, line, index, lines) => {
+      if (isBlank(line)) {
+        // Do not count a trailing newline as a blank line.
+        if (line === "" && index === lines.length - 1) {
+          return report;
+        }
 
-            return { ...report, blankLines: report.blankLines + 1 };
-          }
-          if (isComment(line, language)) {
-            return { ...report, commentLines: report.commentLines + 1 };
-          }
-          return { ...report, linesOfCode: report.linesOfCode + 1 };
-        }, initialReport)
-    )
-    .andThen((fileReport) =>
-      summaryRef
-        .modify((currentSummary) => addFileReport(currentSummary, fileReport))
-        .as(undefined)
-    );
+        return { ...report, blankLines: report.blankLines + 1 };
+      }
+      if (isComment(line, language)) {
+        return { ...report, commentLines: report.commentLines + 1 };
+      }
+      return { ...report, linesOfCode: report.linesOfCode + 1 };
+    }, initialReport)
+  );
 }
 
 function analyseDirectory(
   path: string,
-  workQueue: Queue<FileSystemEntry>,
-  summaryRef: Ref<Summary>
+  workQueue: Queue<FileSystemEntry>
 ): IO<void, NodeJS.ErrnoException> {
   return readDir(path, { encoding: "utf8", withFileTypes: true })
     .map(R.map((stats) => ({ path: joinPath(path, stats.name), stats })))

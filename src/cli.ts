@@ -30,12 +30,12 @@ function formatReport(summary: Summary): string {
         [
           languageReport.language.name,
           `---------------------`,
-          `Files:         ${languageReport.files.toString().padStart(6)}`,
-          `Lines of code: ${languageReport.linesOfCode.toString().padStart(6)}`,
+          `Files:         ${languageReport.files.toString().padStart(8)}`,
+          `Lines of code: ${languageReport.linesOfCode.toString().padStart(8)}`,
           `Comment lines: ${languageReport.commentLines
             .toString()
-            .padStart(6)}`,
-          `Blank lines:   ${languageReport.blankLines.toString().padStart(6)}`,
+            .padStart(8)}`,
+          `Blank lines:   ${languageReport.blankLines.toString().padStart(8)}`,
         ].join("\n") + "\n"
     )
     .join("\n");
