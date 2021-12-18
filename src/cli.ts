@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import IO from "effective.ts";
 import { generateLinesOfCodeReport, Summary } from "./loc";
 

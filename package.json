@@ -2,9 +2,11 @@
   "name": "effective-loc",
   "version": "0.0.1",
   "description": "A program for counting lines of code in a codebase, using effective.ts.",
-  "main": "dist/cli.js",
+  "main": "./dist/cli.js",
+  "bin": "./dist/cli.js",
   "scripts": {
     "test": "jest",
+    "build": "tsc",
     "effective-loc": "ts-node ./src/cli.ts"
   },
   "author": "David Timms",
