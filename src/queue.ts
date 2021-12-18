@@ -59,6 +59,12 @@ export class Queue<A> {
     }).castError<never>();
   }
 
+  length(): IO<number, never> {
+    return IO(() =>
+      this.state.tag === "EMPTY" ? 0 : this.state.items.length
+    ).castError<never>();
+  }
+
   static create<A>(): IO<Queue<A>, never> {
     return IO(() => new Queue<A>()).castError<never>();
   }

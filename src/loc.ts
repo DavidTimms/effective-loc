@@ -43,29 +43,65 @@ interface FileSystemEntry {
 export function generateLinesOfCodeReport(
   paths: string[]
 ): IO<Summary, NodeJS.ErrnoException> {
-  return Ref.create<Summary>({ languages: [] }).andThen((summaryRef) =>
-    Queue.create<FileSystemEntry>().andThen((workQueue) =>
+  const resourceAcquisitions = [
+    Ref.create<Summary>({ languages: [] }),
+    Ref.create<number>(0),
+    Queue.create<FileSystemEntry>(),
+  ] as const;
+
+  return IO.sequence(resourceAcquisitions).andThen(
+    ([summaryRef, busyWorkersRef, workQueue]) =>
       forEach(entryFromPath, paths)
         .andThen(forEach(workQueue.add))
         .andThen(() =>
-          IO.parallel(
-            Array(PARALLELISM)
-              .fill(0)
-              .map(() => processNextEntry(workQueue, summaryRef))
-          )
+          IO.race([
+            runWorkers(workQueue, busyWorkersRef, summaryRef),
+            waitUntilFinished(workQueue, busyWorkersRef),
+          ])
         )
         .andThen(() => summaryRef.get)
-    )
   );
 }
 
-function processNextEntry(
+function waitUntilFinished(
   workQueue: Queue<FileSystemEntry>,
+  busyWorkersRef: Ref<number>
+): IO<void, never> {
+  const checkAgain: IO<void, never> = busyWorkersRef.get
+    .andThen((busyWorkerCount) =>
+      workQueue.length().andThen((workQueueLength) => {
+        if (busyWorkerCount === 0 && workQueueLength === 0) {
+          return IO.void;
+        } else {
+          return checkAgain;
+        }
+      })
+    )
+    .delay(25, "milliseconds");
+
+  return checkAgain;
+}
+
+function runWorkers(
+  workQueue: Queue<FileSystemEntry>,
+  busyWorkersRef: Ref<number>,
   summaryRef: Ref<Summary>
 ): IO<void, NodeJS.ErrnoException> {
+  return IO.parallel(
+    Array(PARALLELISM)
+      .fill(0)
+      .map(() => runWorker(workQueue, busyWorkersRef, summaryRef))
+  ).as(undefined);
+}
+
+function runWorker(
+  workQueue: Queue<FileSystemEntry>,
+  busyWorkersRef: Ref<number>,
+  summaryRef: Ref<Summary>
+): IO<never, NodeJS.ErrnoException> {
   return workQueue
     .remove()
-    .timeout(100, "milliseconds")
+    .through(() => busyWorkersRef.modify((count) => count + 1))
     .andThen((entry) => analyseEntry(entry, workQueue))
     .andThen((fileReport) =>
       fileReport
@@ -76,10 +112,8 @@ function processNextEntry(
             .as(undefined)
         : IO.void
     )
-    .andThen(() => processNextEntry(workQueue, summaryRef))
-    .catch((error) =>
-      error instanceof TimeoutError ? IO.void : IO.raise(error)
-    );
+    .through(() => busyWorkersRef.modify((count) => count - 1))
+    .repeatForever();
 }
 
 function entryFromPath(
