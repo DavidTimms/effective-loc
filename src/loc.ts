@@ -43,6 +43,18 @@ interface FileSystemEntry {
 export function generateLinesOfCodeReport(
   paths: string[]
 ): IO<Summary, NodeJS.ErrnoException> {
+  // summaryRef contains the language statistics from all files
+  // analyses so far. It is updated as each file is analysed.
+
+  // busyWorkerRef contains the number of worker fibers which
+  // are currently analysing a file. When this reaches zero
+  // and the work queue is empty, we know the analysis is
+  // finished.
+
+  // workQueue contains file system entries which have not yet
+  // been processed. When a directory is analysed, any files
+  // within it are added to the back of the queue.
+
   const resourceAcquisitions = [
     Ref.create<Summary>({ languages: [] }),
     Ref.create<number>(0),
