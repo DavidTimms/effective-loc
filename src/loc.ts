@@ -103,7 +103,7 @@ function runWorkers(
     Array(PARALLELISM)
       .fill(0)
       .map(() => runWorker(workQueue, busyWorkersRef, summaryRef))
-  ).as(undefined);
+  ).void;
 }
 
 function runWorker(
@@ -117,11 +117,9 @@ function runWorker(
     .andThen((entry) => analyseEntry(entry, workQueue))
     .andThen((fileReport) =>
       fileReport
-        ? summaryRef
-            .modify((currentSummary) =>
-              addFileReport(currentSummary, fileReport)
-            )
-            .as(undefined)
+        ? summaryRef.modify((currentSummary) =>
+            addFileReport(currentSummary, fileReport)
+          ).void
         : IO.void
     )
     .through(() => busyWorkersRef.modify((count) => count - 1))
@@ -187,8 +185,7 @@ function analyseDirectory(
 ): IO<void, NodeJS.ErrnoException> {
   return readDir(path, { encoding: "utf8", withFileTypes: true })
     .map(R.map((stats) => ({ path: joinPath(path, stats.name), stats })))
-    .andThen(forEach(workQueue.add))
-    .andThen(() => IO.void);
+    .andThen(forEach(workQueue.add)).void;
 }
 
 function addFileReport(
